@@ -86,10 +86,11 @@ def get_macro_snapshot(lookback_days: int = 400) -> pd.DataFrame:
             select(RawMacro).where(RawMacro.date >= start)
         ).scalars().all()
 
-    if not rows:
+        records = [{"series_id": r.series_id, "date": r.date, "value": r.value} for r in rows]
+
+    if not records:
         return pd.DataFrame()
 
-    records = [{"series_id": r.series_id, "date": r.date, "value": r.value} for r in rows]
     df = pd.DataFrame(records)
     df["date"] = pd.to_datetime(df["date"])
 

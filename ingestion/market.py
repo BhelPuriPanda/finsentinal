@@ -77,3 +77,30 @@ def ingest_market_data(
             results[ticker] = -1
 
     return results
+
+def get_latest_prices(tickers: list = TICKERS, lookback_days: int = 252) -> pd.DataFrame:
+    from datetime import date, timedelta
+    from sqlalchemy import select
+
+    start = date.today() - timedelta(days=lookback_days)
+
+    with get_session() as session:
+        rows = session.execute(
+            select(RawPrice).where(
+                RawPrice.ticker.in_(tickers),
+                RawPrice.date >= start,
+            ).order_by(RawPrice.ticker, RawPrice.date)
+        ).scalars().all()
+
+        records = [{
+            "ticker": r.ticker, "date": r.date,
+            "open": r.open, "high": r.high,
+            "low": r.low, "close": r.close,
+            "volume": r.volume,
+        } for r in rows]
+
+    df = pd.DataFrame(records)
+    if df.empty:
+        return df
+    df["date"] = pd.to_datetime(df["date"])
+    return df.set_index(["ticker", "date"]).sort_index()
