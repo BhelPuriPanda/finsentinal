@@ -66,6 +66,14 @@ with st.sidebar:
     st.caption(f"Last updated: {date.today().isoformat()}")
     st.caption("Pipeline: daily at 4:30 PM ET")
 
+    if st.button("▶ Run Pipeline Now", use_container_width=True):
+        with st.spinner("Running pipeline..."):
+            from pipeline.runner import run_pipeline
+            run_pipeline(backfill_days=2)
+        st.cache_data.clear()
+        st.success("Pipeline complete!")
+        st.rerun()
+
 # ── Data loaders ──────────────────────────────────────────────
 @st.cache_data(ttl=900)
 def load_prices(ticker: str, days: int):
