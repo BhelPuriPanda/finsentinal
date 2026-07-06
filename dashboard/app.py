@@ -194,4 +194,294 @@ with col4:
             st.metric("Prediction", direction, f"{conf:.1%} confidence")
 
 st.divider()
-st.info("📊 Panels loading in Days 12–15. Shell is live.")
+
+# ── Panel 1: Candlestick + Technicals ─────────────────────────
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+st.subheader(f"📊 Price & Technicals")
+
+if prices.empty:
+    st.info("No price data. Run the pipeline first.")
+else:
+    fig = make_subplots(
+        rows=3, cols=1,
+        shared_xaxes=True,
+        row_heights=[0.55, 0.25, 0.20],
+        vertical_spacing=0.04,
+        subplot_titles=("Price + Bollinger Bands", "RSI (14)", "MACD"),
+    )
+
+    # Candlestick
+    fig.add_trace(go.Candlestick(
+        x=prices.index,
+        open=prices["open"],
+        high=prices["high"],
+        low=prices["low"],
+        close=prices["close"],
+        increasing_line_color=PALETTE["green"],
+        decreasing_line_color=PALETTE["red"],
+        name="OHLC",
+    ), row=1, col=1)
+
+    # Bollinger Bands
+    if not features.empty and "bb_upper" in features.columns:
+        fig.add_trace(go.Scatter(
+            x=features.index, y=features["bb_upper"],
+            line=dict(color=PALETTE["blue"], width=1, dash="dot"),
+            name="BB Upper",
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=features.index, y=features["bb_lower"],
+            line=dict(color=PALETTE["blue"], width=1, dash="dot"),
+            fill="tonexty",
+            fillcolor="rgba(77,166,255,0.07)",
+            name="BB Lower",
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=features.index, y=features["bb_mid"],
+            line=dict(color=PALETTE["muted"], width=1),
+            name="BB Mid",
+        ), row=1, col=1)
+
+    # RSI
+    if not features.empty and "rsi_14" in features.columns:
+        fig.add_trace(go.Scatter(
+            x=features.index, y=features["rsi_14"],
+            line=dict(color=PALETTE["gold"], width=1.5),
+            name="RSI 14",
+        ), row=2, col=1)
+        fig.add_hline(y=70, line_dash="dot",
+                      line_color=PALETTE["red"],   row=2, col=1)
+        fig.add_hline(y=30, line_dash="dot",
+                      line_color=PALETTE["green"], row=2, col=1)
+
+    # MACD
+    if not features.empty and "macd" in features.columns:
+        colors = [
+            PALETTE["green"] if v >= 0 else PALETTE["red"]
+            for v in features["macd_hist"].fillna(0)
+        ]
+        fig.add_trace(go.Bar(
+            x=features.index, y=features["macd_hist"],
+            marker_color=colors, name="MACD Hist", opacity=0.7,
+        ), row=3, col=1)
+        fig.add_trace(go.Scatter(
+            x=features.index, y=features["macd"],
+            line=dict(color=PALETTE["blue"], width=1.5),
+            name="MACD",
+        ), row=3, col=1)
+        fig.add_trace(go.Scatter(
+            x=features.index, y=features["macd_signal"],
+            line=dict(color=PALETTE["gold"], width=1.5),
+            name="Signal",
+        ), row=3, col=1)
+
+    fig.update_layout(
+        height=620,
+        paper_bgcolor=PALETTE["bg"],
+        plot_bgcolor=PALETTE["bg"],
+        font_color=PALETTE["text"],
+        xaxis_rangeslider_visible=False,
+        showlegend=True,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        margin=dict(l=40, r=40, t=60, b=40),
+    )
+    fig.update_xaxes(gridcolor="#2a2d3a", showgrid=True)
+    fig.update_yaxes(gridcolor="#2a2d3a", showgrid=True)
+
+    st.plotly_chart(fig, use_container_width=True)
+
+st.divider()
+
+# ── Panel 2: Sentiment Timeline ───────────────────────────────
+st.subheader(f"🗞️ News Sentiment vs. Price")
+
+if features.empty or "sentiment_compound_mean" not in features.columns:
+    st.info("No sentiment data available.")
+else:
+    sent = features["sentiment_compound_mean"].dropna()
+
+    if sent.empty:
+        st.info("No sentiment data for this period.")
+    else:
+        fig2 = make_subplots(specs=[[{"secondary_y": True}]])
+
+        # Price line
+        fig2.add_trace(go.Scatter(
+            x=prices.index,
+            y=prices["close"],
+            line=dict(color=PALETTE["blue"], width=2),
+            name="Close Price",
+        ), secondary_y=False)
+
+        # Sentiment bars
+        bar_colors = [
+            PALETTE["green"] if v >= 0 else PALETTE["red"]
+            for v in sent
+        ]
+        fig2.add_trace(go.Bar(
+            x=sent.index,
+            y=sent,
+            marker_color=bar_colors,
+            name="Sentiment (VADER)",
+            opacity=0.6,
+        ), secondary_y=True)
+
+        # Zero line on sentiment axis
+        fig2.add_hline(
+            y=0, line_dash="dot",
+            line_color=PALETTE["muted"],
+            secondary_y=True,
+        )
+
+        fig2.update_layout(
+            height=380,
+            paper_bgcolor=PALETTE["bg"],
+            plot_bgcolor=PALETTE["bg"],
+            font_color=PALETTE["text"],
+            margin=dict(l=40, r=40, t=40, b=40),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        )
+        fig2.update_xaxes(gridcolor="#2a2d3a", showgrid=True)
+        fig2.update_yaxes(
+            title_text="Price ($)",
+            gridcolor="#2a2d3a",
+            secondary_y=False,
+        )
+        fig2.update_yaxes(
+            title_text="Sentiment Score",
+            range=[-1, 1],
+            gridcolor="#2a2d3a",
+            secondary_y=True,
+        )
+
+        st.plotly_chart(fig2, use_container_width=True)
+
+        # Summary stats below chart
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Avg Sentiment", f"{sent.mean():+.3f}")
+        with col2:
+            st.metric("Latest Sentiment", f"{sent.iloc[-1]:+.3f}")
+        with col3:
+            positive_days = (sent > 0).sum()
+            st.metric("Positive Days", f"{positive_days}/{len(sent)}")
+
+st.divider()
+
+# ── Panel 3: Anomaly Alerts ───────────────────────────────────
+st.subheader("🚨 Anomaly Alerts")
+
+anomalies = load_anomalies(lookback)
+
+if anomalies.empty:
+    st.success("No anomalies detected in this period.")
+else:
+    # Summary metrics
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Anomalies", len(anomalies))
+    with col2:
+        most_common = anomalies["Ticker"].value_counts().idxmax()
+        st.metric("Most Flagged", most_common)
+    with col3:
+        latest = anomalies["Date"].max()
+        st.metric("Latest Alert", str(latest))
+
+    st.markdown("---")
+
+    # Colour map per ticker
+    ticker_colors = {
+        "AAPL":  "#4da6ff",
+        "TSLA":  "#ff4d4d",
+        "GOOGL": "#ffd700",
+        "MSFT":  "#00d084",
+        "NVDA":  "#c084fc",
+    }
+
+    # Render each anomaly as a card
+    for _, row in anomalies.iterrows():
+        color = ticker_colors.get(row["Ticker"], "#888")
+        score = row["Anomaly Score"]
+        severity = "HIGH" if score < -0.10 else "MED" if score < -0.05 else "LOW"
+        sev_color = "#ff4d4d" if severity == "HIGH" else "#ffd700" if severity == "MED" else "#00d084"
+
+        st.markdown(f"""
+<div style="
+    background: #1c1e26;
+    border-left: 4px solid {color};
+    border-radius: 6px;
+    padding: 10px 16px;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+">
+    <div>
+        <span style="color:{color};font-weight:700;font-size:1rem">{row['Ticker']}</span>
+        <span style="color:#888;margin-left:12px;font-size:0.85rem">{row['Date']}</span>
+        <span style="color:#aaa;margin-left:12px;font-size:0.82rem">
+            Top feature: <b style="color:#e0e0e0">{row['Top Feature']}</b>
+        </span>
+    </div>
+    <div style="text-align:right">
+        <span style="
+            background:{sev_color}22;
+            color:{sev_color};
+            border:1px solid {sev_color}55;
+            border-radius:4px;
+            padding:2px 8px;
+            font-size:0.78rem;
+            font-weight:700;
+        ">{severity}</span>
+        <span style="color:#888;font-size:0.82rem;margin-left:10px">score: {score}</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+st.divider()
+
+# ── Panel 4: Next-Day Predictions ─────────────────────────────
+st.subheader(f"🤖 Next-Day Predictions — {date.today().isoformat()}")
+
+preds = load_predictions()
+
+if preds.empty:
+    st.info("No predictions yet. Run the pipeline.")
+else:
+    cols = st.columns(len(preds))
+    for col, (_, row) in zip(cols, preds.iterrows()):
+        direction = row["Direction"]
+        confidence = row["Confidence"]
+        prob_up = row["P(Up)"]
+        prob_down = row["P(Down)"]
+        color = PALETTE["green"] if direction == "UP" else PALETTE["red"]
+        arrow = "⬆" if direction == "UP" else "⬇"
+
+        with col:
+            st.markdown(f"""
+<div style="
+    background:{PALETTE['card']};
+    border:1px solid {color}55;
+    border-radius:10px;
+    padding:18px 12px;
+    text-align:center;
+">
+    <div style="font-size:1rem;font-weight:700;color:{PALETTE['text']}">{row['Ticker']}</div>
+    <div style="font-size:2.2rem;color:{color};margin:8px 0">{arrow}</div>
+    <div style="font-size:1.1rem;font-weight:700;color:{color}">{direction}</div>
+    <div style="color:{PALETTE['muted']};font-size:0.82rem;margin-top:6px">
+        Confidence: <b style="color:{PALETTE['text']}">{confidence:.1%}</b>
+    </div>
+    <div style="margin-top:8px">
+        <span style="color:{PALETTE['green']};font-size:0.78rem">▲ {prob_up:.1%}</span>
+        <span style="color:{PALETTE['muted']};font-size:0.78rem"> / </span>
+        <span style="color:{PALETTE['red']};font-size:0.78rem">▼ {prob_down:.1%}</span>
+    </div>
+    <div style="color:{PALETTE['muted']};font-size:0.72rem;margin-top:6px">{row['Date']}</div>
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown("---")
+st.caption("⚠️ For educational and portfolio purposes only. Not financial advice.")
