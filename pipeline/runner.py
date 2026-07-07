@@ -6,7 +6,8 @@ load_dotenv()
 
 
 def run_pipeline(backfill_days: int = 2):
-    from db.session import init_db
+    from db.session import init_db, get_session
+    from db.models import RawPrice, RawMacro
     from ingestion.market import ingest_market_data
     from ingestion.news import ingest_news_sentiment
     from ingestion.macro import ingest_macro_data
@@ -18,16 +19,32 @@ def run_pipeline(backfill_days: int = 2):
 
     init_db()
     end   = date.today()
-    start = end - timedelta(days=backfill_days)
+
+    # Check if we have enough historical data. If not, auto-backfill.
+    with get_session() as session:
+        price_count = session.query(RawPrice).count()
+        macro_count = session.query(RawMacro).count()
+
+    is_fresh = (price_count < 100 or macro_count < 10)
+    if is_fresh:
+        logger.info("Database has insufficient historical data. Automatically running initial backfill (365 days prices, 730 days macro)...")
+        start_prices = end - timedelta(days=365)
+        start_macro = end - timedelta(days=730)
+        # Fetching news for 30 days during initial backfill to avoid huge api loads
+        start_news = end - timedelta(days=30)
+    else:
+        start_prices = end - timedelta(days=backfill_days)
+        start_macro = end - timedelta(days=backfill_days)
+        start_news = end - timedelta(days=backfill_days)
 
     logger.info("Step 1: Market data...")
-    ingest_market_data(start=start, end=end)
+    ingest_market_data(start=start_prices, end=end)
 
     logger.info("Step 2: News sentiment...")
-    ingest_news_sentiment(start=start, end=end)
+    ingest_news_sentiment(start=start_news, end=end)
 
     logger.info("Step 3: Macro data...")
-    ingest_macro_data(start=start, end=end)
+    ingest_macro_data(start=start_macro, end=end)
 
     logger.info("Step 4: Feature engineering...")
     build_features(lookback_days=400)

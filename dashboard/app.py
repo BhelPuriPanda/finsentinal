@@ -11,6 +11,7 @@ load_dotenv()
 from db.session import init_db, get_session
 from db.models import RawPrice, RawNews, Features, AnomalyAlert, Prediction
 from sqlalchemy import select
+import pandas as pd
 
 # ── Page config ───────────────────────────────────────────────
 st.set_page_config(
@@ -190,7 +191,7 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-    if st.button("▶ Run Pipeline Now", use_container_width=True):
+    if st.button("▶ Run Pipeline Now", width='stretch'):
         with st.spinner("Running pipeline..."):
             from pipeline.runner import run_pipeline
             run_pipeline(backfill_days=2)
@@ -307,24 +308,34 @@ features = load_features(ticker, lookback)
 if not prices.empty:
     latest = prices["close"].iloc[-1]
     prev   = prices["close"].iloc[-2] if len(prices) > 1 else latest
-    change_pct = ((latest - prev) / prev) * 100
-    change_color = "#00d084" if change_pct >= 0 else "#ff4d4d"
-    change_sign = "+" if change_pct >= 0 else ""
-    
-    st.markdown(f"""
-    <div style="margin-top: -1rem; margin-bottom: 1.5rem;">
-        <div style="display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;">
+    if pd.isna(latest) or pd.isna(prev):
+        st.markdown(f"""
+        <div style="margin-top: -1rem; margin-bottom: 1.5rem;">
             <h1 style="font-size: 2.8rem; font-weight: 800; margin: 0; letter-spacing: -0.03em;">{ticker}</h1>
-            <span style="font-size: 2rem; font-weight: 700; font-family: monospace; color: #787878;">${latest:.2f}</span>
-            <span style="font-size: 1.05rem; font-weight: 700; color: {change_color}; background-color: {change_color}15; padding: 4px 10px; border-radius: 8px; border: 1px solid {change_color}33; display: inline-flex; align-items: center; gap: 4px;">
-                {change_sign}{change_pct:.2f}%
-            </span>
+            <p style="color: #888888; font-size: 0.9rem; margin-top: 6px; margin-bottom: 0;">
+                No valid price records available.
+            </p>
         </div>
-        <p style="color: #888888; font-size: 0.9rem; margin-top: 6px; margin-bottom: 0;">
-            Institutional-Grade Analytics &bull; Showing last {lookback} trading days
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
+    else:
+        change_pct = ((latest - prev) / prev) * 100
+        change_color = "#00d084" if change_pct >= 0 else "#ff4d4d"
+        change_sign = "+" if change_pct >= 0 else ""
+        
+        st.markdown(f"""
+        <div style="margin-top: -1rem; margin-bottom: 1.5rem;">
+            <div style="display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;">
+                <h1 style="font-size: 2.8rem; font-weight: 800; margin: 0; letter-spacing: -0.03em;">{ticker}</h1>
+                <span style="font-size: 2rem; font-weight: 700; font-family: monospace; color: #787878;">${latest:.2f}</span>
+                <span style="font-size: 1.05rem; font-weight: 700; color: {change_color}; background-color: {change_color}15; padding: 4px 10px; border-radius: 8px; border: 1px solid {change_color}33; display: inline-flex; align-items: center; gap: 4px;">
+                    {change_sign}{change_pct:.2f}%
+                </span>
+            </div>
+            <p style="color: #888888; font-size: 0.9rem; margin-top: 6px; margin-bottom: 0;">
+                Institutional-Grade Analytics &bull; Showing last {lookback} trading days
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
 else:
     st.markdown(f"""
     <div style="margin-top: -1rem; margin-bottom: 1.5rem;">
@@ -340,12 +351,18 @@ with col1:
     if not prices.empty:
         latest = prices["close"].iloc[-1]
         prev   = prices["close"].iloc[-2] if len(prices) > 1 else latest
-        st.metric("Latest Close", f"${latest:.2f}", f"{((latest-prev)/prev)*100:.2f}%")
+        if pd.isna(latest) or pd.isna(prev):
+            st.metric("Latest Close", "N/A", "N/A")
+        else:
+            st.metric("Latest Close", f"${latest:.2f}", f"{((latest-prev)/prev)*100:.2f}%")
 
 with col2:
     if not features.empty:
         rsi = features["rsi_14"].iloc[-1]
-        st.metric("RSI (14)", f"{rsi:.1f}", "Overbought" if rsi > 70 else "Oversold" if rsi < 30 else "Neutral")
+        if pd.isna(rsi):
+            st.metric("RSI (14)", "N/A", "Neutral")
+        else:
+            st.metric("RSI (14)", f"{rsi:.1f}", "Overbought" if rsi > 70 else "Oversold" if rsi < 30 else "Neutral")
 
 with col3:
     preds = load_predictions()
@@ -354,12 +371,18 @@ with col3:
         if not row.empty:
             direction = row["Direction"].iloc[0]
             conf      = row["Confidence"].iloc[0]
-            st.metric("Prediction", direction, f"{conf:.1%} confidence")
+            if pd.isna(conf):
+                st.metric("Prediction", direction or "N/A", "N/A confidence")
+            else:
+                st.metric("Prediction", direction, f"{conf:.1%} confidence")
 
 with col4:
     if not features.empty:
         vix = features["vix"].iloc[-1]
-        st.metric("VIX", f"{vix:.2f}")
+        if pd.isna(vix):
+            st.metric("VIX", "N/A")
+        else:
+            st.metric("VIX", f"{vix:.2f}")
 
 st.markdown("<div style='margin-top: 2rem;'></div>", unsafe_allow_html=True)
 
@@ -468,7 +491,7 @@ else:
     fig.update_xaxes(gridcolor="#1F232D", showgrid=True)
     fig.update_yaxes(gridcolor="#1F232D", showgrid=True)
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
 st.markdown("<div style='margin-top: 3.5rem;'></div>", unsafe_allow_html=True)
 
@@ -544,7 +567,7 @@ else:
             secondary_y=True,
         )
 
-        st.plotly_chart(fig2, use_container_width=True)
+        st.plotly_chart(fig2, width='stretch')
 
         # Summary stats below chart
         col1, col2, col3 = st.columns(3)
@@ -593,8 +616,14 @@ else:
     for _, row in anomalies.iterrows():
         color = ticker_colors.get(row["Ticker"], "#888")
         score = row["Anomaly Score"]
-        severity = "HIGH" if score < -0.10 else "MED" if score < -0.05 else "LOW"
-        sev_color = "#ff4d4d" if severity == "HIGH" else "#ffd700" if severity == "MED" else "#00d084"
+        if pd.isna(score):
+            severity = "LOW"
+            sev_color = "#00d084"
+            score_str = "N/A"
+        else:
+            severity = "HIGH" if score < -0.10 else "MED" if score < -0.05 else "LOW"
+            sev_color = "#ff4d4d" if severity == "HIGH" else "#ffd700" if severity == "MED" else "#00d084"
+            score_str = f"{score:.4f}"
 
         st.markdown(f"""<div class="anomaly-alert-card" style="border-left: 4px solid {color} !important;">
 <div>
@@ -607,7 +636,7 @@ else:
 <span style="width:6px;height:6px;background-color:{sev_color};border-radius:50%;"></span>
 {severity}
 </span>
-<span style="color:#888;font-size:0.85rem;font-weight:600;font-family:monospace;margin-left:14px;">Score: {score:.4f}</span>
+<span style="color:#888;font-size:0.85rem;font-weight:600;font-family:monospace;margin-left:14px;">Score: {score_str}</span>
 </div>
 </div>""", unsafe_allow_html=True)
 
@@ -626,7 +655,7 @@ else:
         st.info(f"No prediction for {ticker} today.")
     else:
         row = preds_filtered.iloc[0]
-        direction  = row["Direction"]
+        direction  = row["Direction"] or "N/A"
         confidence = row["Confidence"]
         prob_up    = row["P(Up)"]
         prob_down  = row["P(Down)"]
@@ -634,21 +663,25 @@ else:
         arrow      = "⬆" if direction == "UP" else "⬇"
 
         # Bar width for prob visual
-        up_pct   = int(prob_up * 100)
-        down_pct = int(prob_down * 100)
+        up_pct   = int(prob_up * 100) if (prob_up is not None and not pd.isna(prob_up)) else 0
+        down_pct = int(prob_down * 100) if (prob_down is not None and not pd.isna(prob_down)) else 0
+
+        conf_str = f"{confidence:.1%}" if (confidence is not None and not pd.isna(confidence)) else "N/A"
+        prob_up_str = f"{prob_up:.1%}" if (prob_up is not None and not pd.isna(prob_up)) else "N/A"
+        prob_down_str = f"{prob_down:.1%}" if (prob_down is not None and not pd.isna(prob_down)) else "N/A"
 
         left, center, right = st.columns([1, 1.2, 1])
         center.markdown(f"""<div style="background:{PALETTE['card']};border:1px solid {color}66;border-radius:14px;padding:24px 28px;text-align:center;">
 <div style="font-size:1rem;font-weight:800;color:#888;letter-spacing:2px;margin-bottom:12px">NEXT DAY &bull; {ticker}</div>
 <div style="font-size:3.5rem;color:{color};line-height:1">{arrow}</div>
 <div style="font-size:1.6rem;font-weight:800;color:{color};margin:6px 0">{direction}</div>
-<div style="color:{PALETTE['muted']};font-size:0.85rem;margin-bottom:18px">Model confidence: <b style="color:{PALETTE['text']};font-size:1rem">{confidence:.1%}</b></div>
+<div style="color:{PALETTE['muted']};font-size:0.85rem;margin-bottom:18px">Model confidence: <b style="color:{PALETTE['text']};font-size:1rem">{conf_str}</b></div>
 <div style="background:#2a2d3a;border-radius:6px;overflow:hidden;height:8px;margin-bottom:6px">
 <div style="width:{up_pct}%;height:100%;background:linear-gradient(90deg,{PALETTE['green']},{PALETTE['green']}99)"></div>
 </div>
 <div style="display:flex;justify-content:space-between;font-size:0.78rem">
-<span style="color:{PALETTE['green']}">▲ UP {prob_up:.1%}</span>
-<span style="color:{PALETTE['red']}">▼ DOWN {prob_down:.1%}</span>
+<span style="color:{PALETTE['green']}">▲ UP {prob_up_str}</span>
+<span style="color:{PALETTE['red']}">▼ DOWN {prob_down_str}</span>
 </div>
 </div>""", unsafe_allow_html=True)
 
