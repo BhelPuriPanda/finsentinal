@@ -14,11 +14,13 @@ TICKERS = os.getenv("TICKERS", "AAPL,TSLA,GOOGL,MSFT,NVDA").split(",")
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=10))
 def _fetch_ticker(ticker: str, start: date, end: date) -> pd.DataFrame:
-    t = yf.Ticker(ticker)
+    import yfinance as yf
+    t = yf.Ticker(ticker, session=None)
     df = t.history(
         start=start.isoformat(),
         end=end.isoformat(),
         auto_adjust=True,
+        proxy=None,
     )
     return df
 
